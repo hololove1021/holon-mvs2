@@ -21,6 +21,13 @@ if getgenv().HolonConnections then
 end
 getgenv().HolonConnections = {}
 pcall(function() RunService:UnbindFromRenderStep("HolonAimbot") end)
+-- GUIクリーンアップ
+local function cleanupGui(name)
+    if game:GetService("CoreGui"):FindFirstChild(name) then game:GetService("CoreGui")[name]:Destroy() end
+    if gethui and gethui():FindFirstChild(name) then gethui()[name]:Destroy() end
+    if LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name) then LocalPlayer.PlayerGui[name]:Destroy() end
+end
+cleanupGui("HolonFOV")
 
 -- リンク集を表示する共通関数（認証画面とメイン画面で使い回せます）
 local function AddDetailContent(Tab)
@@ -61,22 +68,38 @@ local aimCfg = {
 }
 
 -- Auto Aim FOV Circle
-local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 1
-fovCircle.NumSides = 60
-fovCircle.Radius = 150
-fovCircle.Filled = false
-fovCircle.Visible = false
-fovCircle.Color = Color3.new(1, 1, 1)
-fovCircle.Transparency = 1
+local fovCircleGui = Instance.new("ScreenGui")
+fovCircleGui.Name = "HolonFOV"
+-- gethuiがあればそれを使用、なければCoreGui、それもなければPlayerGui
+local parent = (gethui and gethui()) or game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
+fovCircleGui.Parent = parent
+fovCircleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local fovCircleFrame = Instance.new("Frame")
+fovCircleFrame.Name = "Circle"
+fovCircleFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircleFrame.BackgroundColor3 = Color3.new(1, 1, 1)
+fovCircleFrame.BackgroundTransparency = 1
+fovCircleFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovCircleFrame.Size = UDim2.new(0, 300, 0, 300)
+fovCircleFrame.Parent = fovCircleGui
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent = fovCircleFrame
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = Color3.new(1, 1, 1)
+fovStroke.Thickness = 1
+fovStroke.Parent = fovCircleFrame
 
 -- オートエイムループ
 RunService:BindToRenderStep("HolonAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     -- FOV円の更新
+    fovCircleFrame.Size = UDim2.new(0, aimCfg.FOV * 2, 0, aimCfg.FOV * 2)
+    fovCircleGui.Enabled = aimCfg.ShowFOV
+    
     local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    fovCircle.Position = center
-    fovCircle.Radius = aimCfg.FOV
-    fovCircle.Visible = aimCfg.ShowFOV
 
     if aimCfg.Enabled then
         local closest = nil
