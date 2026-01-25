@@ -572,7 +572,7 @@ RunService.RenderStepped:Connect(function()
     -- FOV円の更新
     fovCircle.Position = UserInputService:GetMouseLocation()
     fovCircle.Radius = aimCfg.FOV
-    fovCircle.Visible = aimCfg.Enabled and aimCfg.ShowFOV
+    fovCircle.Visible = aimCfg.ShowFOV
 
     if aimCfg.Enabled then
         local closest = nil
@@ -691,8 +691,14 @@ UIElements.AimThroughWalls = AimSec:AddToggle({
     Callback = function(v) aimCfg.ThroughWalls = v end
 })
 
+-- --- TAB: ESP ---
+local EspTab = Window:MakeTab({
+    Name = "ESP",
+    Icon = "rbxassetid://7733771472"
+})
+
 -- ESP設定セクション
-local EspSec = SubTab:AddSection({
+local EspSec = EspTab:AddSection({
     Name = "ESP設定"
 })
 
