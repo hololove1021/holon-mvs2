@@ -67,6 +67,21 @@ local aimCfg = {
     TargetTeam = "敵チーム"
 }
 
+local currentLockedTarget = nil
+
+local bodyPartMap = {
+    ["頭"] = "Head",
+    ["胴体"] = "HumanoidRootPart",
+    ["上半身"] = "UpperTorso",
+    ["下半身"] = "LowerTorso"
+}
+local bodyPartMapReverse = {
+    ["Head"] = "頭",
+    ["HumanoidRootPart"] = "胴体",
+    ["UpperTorso"] = "上半身",
+    ["LowerTorso"] = "下半身"
+}
+
 -- Auto Aim FOV Circle
 local fovCircleGui = Instance.new("ScreenGui")
 fovCircleGui.Name = "HolonFOV"
@@ -97,58 +112,119 @@ fovStroke.Parent = fovCircleFrame
 RunService:BindToRenderStep("HolonAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     -- FOV円の更新
     fovCircleFrame.Size = UDim2.new(0, aimCfg.FOV * 2, 0, aimCfg.FOV * 2)
-    fovCircleGui.Enabled = aimCfg.ShowFOV
+    fovCircleGui.Enabled = aimCfg.Enabled and aimCfg.ShowFOV
     
     local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
     if aimCfg.Enabled then
-        local closest = nil
-        local minDist = aimCfg.FOV
-        local mousePos = center -- 画面中央を基準にする
+        local target = nil
+        
+        -- ロック中のターゲットが有効かチェック
+        if currentLockedTarget and currentLockedTarget.Parent and currentLockedTarget.Parent:FindFirstChild("Humanoid") and currentLockedTarget.Parent.Humanoid.Health > 0 then
+             local p = Players:GetPlayerFromCharacter(currentLockedTarget.Parent)
+             if p then
+                 -- チーム判定
+                 local isTargetTeam = false
+                 if aimCfg.TargetTeam == "全てのチーム" then
+                     isTargetTeam = true
+                 elseif aimCfg.TargetTeam == "敵チーム" then
+                     isTargetTeam = true
+                     if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+                         isTargetTeam = false
+                     end
+                 elseif p.Team and p.Team.Name == aimCfg.TargetTeam then
+                     isTargetTeam = true
+                 end
+                 
+                 if isTargetTeam then
+                     -- FOVと壁抜きチェック
+                     local screenPos, onScreen = Camera:WorldToViewportPoint(currentLockedTarget.Position)
+                     local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                     
+                     if onScreen and dist <= aimCfg.FOV then
+                         local visible = true
+                         if not aimCfg.ThroughWalls then
+                             local params = RaycastParams.new()
+                             params.FilterDescendantsInstances = {LocalPlayer.Character, currentLockedTarget.Parent, workspace.CurrentCamera}
+                             params.FilterType = Enum.RaycastFilterType.Exclude
+                             local dir = (currentLockedTarget.Position - Camera.CFrame.Position)
+                             local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
+                             if result then visible = false end
+                         end
+                         
+                         if visible then
+                             target = currentLockedTarget
+                         else
+                             currentLockedTarget = nil
+                         end
+                     else
+                         currentLockedTarget = nil
+                     end
+                 else
+                     currentLockedTarget = nil
+                 end
+             else
+                 currentLockedTarget = nil
+             end
+        else
+            currentLockedTarget = nil
+        end
 
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                -- チーム判定
-                local isTargetTeam = false
-                if aimCfg.TargetTeam == "全てのチーム" then
-                    isTargetTeam = true
-                elseif aimCfg.TargetTeam == "敵チーム" then
-                    isTargetTeam = true
-                    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-                        isTargetTeam = false
+        -- 新しいターゲットを探す
+        if not target then
+            local closest = nil
+            local minDist = aimCfg.FOV
+            
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    -- チーム判定
+                    local isTargetTeam = false
+                    if aimCfg.TargetTeam == "全てのチーム" then
+                        isTargetTeam = true
+                    elseif aimCfg.TargetTeam == "敵チーム" then
+                        isTargetTeam = true
+                        if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+                            isTargetTeam = false
+                        end
+                    elseif p.Team and p.Team.Name == aimCfg.TargetTeam then
+                        isTargetTeam = true
                     end
-                elseif p.Team and p.Team.Name == aimCfg.TargetTeam then
-                    isTargetTeam = true
-                end
 
-                if isTargetTeam and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-                    local targetPart = p.Character[aimCfg.TargetPart]
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                    
-                    if onScreen then
-                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                        if dist < minDist then
-                            -- 壁抜きチェック
-                            if not aimCfg.ThroughWalls then
-                                local params = RaycastParams.new()
-                                params.FilterDescendantsInstances = {LocalPlayer.Character, p.Character, workspace.CurrentCamera}
-                                params.FilterType = Enum.RaycastFilterType.Exclude
-                                local dir = (targetPart.Position - Camera.CFrame.Position)
-                                local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
-                                if result then continue end -- 壁がある
+                    if isTargetTeam and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+                        local targetPart = p.Character[aimCfg.TargetPart]
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                        
+                        if onScreen then
+                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                            if dist < minDist then
+                                -- 壁抜きチェック
+                                if not aimCfg.ThroughWalls then
+                                    local params = RaycastParams.new()
+                                    params.FilterDescendantsInstances = {LocalPlayer.Character, p.Character, workspace.CurrentCamera}
+                                    params.FilterType = Enum.RaycastFilterType.Exclude
+                                    local dir = (targetPart.Position - Camera.CFrame.Position)
+                                    local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
+                                    if result then continue end -- 壁がある
+                                end
+                                
+                                minDist = dist
+                                closest = targetPart
                             end
-                            
-                            minDist = dist
-                            closest = targetPart
                         end
                     end
                 end
             end
+            target = closest
+            if target then
+                currentLockedTarget = target
+            end
         end
         
-        if closest then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
+        if target then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
         end
+    else
+        currentLockedTarget = nil
     end
 end)
 
