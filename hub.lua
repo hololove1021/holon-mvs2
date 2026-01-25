@@ -65,6 +65,14 @@ fovCircle.Visible = false
 fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
 
+-- ESP用ホルダー (CoreGuiに作成して検知回避)
+if game:GetService("CoreGui"):FindFirstChild("HolonESP_Holder") then
+    game:GetService("CoreGui").HolonESP_Holder:Destroy()
+end
+local ESP_Holder = Instance.new("Folder")
+ESP_Holder.Name = "HolonESP_Holder"
+ESP_Holder.Parent = game:GetService("CoreGui")
+
 --------------------------------------------------------------------------------
 -- [ESP & サブ機能] 更新ループ (Prometheus対応版)
 --------------------------------------------------------------------------------
@@ -120,19 +128,19 @@ local function updateSubFeatures()
                 end
 
                 -- 1. ハイライト処理
-                if not esp.H or esp.H.Parent ~= char then 
+                if not esp.H then 
                     esp.H = Instance.new("Highlight")
-                    esp.H.Parent = char
+                    esp.H.Parent = ESP_Holder -- キャラクターではなくCoreGuiに入れる
                     esp.H.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 end
-                esp.H.Enabled = true
+                esp.H.Adornee = char -- 表示先をキャラクターに指定
                 esp.H.Enabled = espCfg.Highlight -- 個別トグル
                 esp.H.FillColor = color
 
                 -- 2. アイコン付き名前表示 (確実に動くURL形式)
-                if not esp.B or esp.B.Parent ~= root then
+                if not esp.B then
                     esp.B = Instance.new("BillboardGui")
-                    esp.B.Parent = root
+                    esp.B.Parent = ESP_Holder -- キャラクターではなくCoreGuiに入れる
                     esp.B.Size = UDim2.new(0, 250, 0, 50)
                     esp.B.AlwaysOnTop = true
                     esp.B.ExtentsOffset = Vector3.new(0, 3, 0)
@@ -162,6 +170,7 @@ local function updateSubFeatures()
                     esp.L = l
                     esp.I = icon
                 end
+                esp.B.Adornee = root -- 表示先をRootPartに指定
                 esp.B.Enabled = true
                 esp.I.Visible = espCfg.Icons
                 esp.L.Visible = espCfg.Names
@@ -572,7 +581,7 @@ RunService.RenderStepped:Connect(function()
     -- FOV円の更新
     fovCircle.Position = UserInputService:GetMouseLocation()
     fovCircle.Radius = aimCfg.FOV
-    fovCircle.Visible = aimCfg.ShowFOV
+    fovCircle.Visible = aimCfg.Enabled and aimCfg.ShowFOV
 
     if aimCfg.Enabled then
         local closest = nil
@@ -691,14 +700,8 @@ UIElements.AimThroughWalls = AimSec:AddToggle({
     Callback = function(v) aimCfg.ThroughWalls = v end
 })
 
--- --- TAB: ESP ---
-local EspTab = Window:MakeTab({
-    Name = "ESP",
-    Icon = "rbxassetid://7733771472"
-})
-
 -- ESP設定セクション
-local EspSec = EspTab:AddSection({
+local EspSec = SubTab:AddSection({
     Name = "ESP設定"
 })
 
