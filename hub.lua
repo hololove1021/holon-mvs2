@@ -50,18 +50,6 @@ local function AddDetailContent(Tab)
     Tab:AddLabel("Roblox ID: " .. RobloxID)
 end
 
-local espCache = {}
-local espCfg = { 
-    Enabled = false, 
-    Names = true, 
-    Icons = true, 
-    Tracers = false, 
-    Highlight = false, 
-    ESPColor = Color3.new(1, 0, 0), 
-    TargetOnly = false,
-    TargetTeam = "全てのチーム",
-    UseTeamColor = false
-}
 local aimCfg = { 
     Enabled = false, 
     FOV = 150, 
@@ -80,129 +68,12 @@ fovCircle.Visible = false
 fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
 
---------------------------------------------------------------------------------
--- [ESP & サブ機能] 更新ループ (Prometheus対応版)
---------------------------------------------------------------------------------
--- 共通のクリーンアップ関数（退出時や非表示時に使用）
-local function removeESP(p)
-    local esp = espCache[p]
-    if esp then
-        if esp.Name then esp.Name:Remove() end
-        if esp.Box then esp.Box:Remove() end
-        if esp.Tracer then esp.Tracer:Remove() end
-        espCache[p] = nil
-    end
-end
-
--- プレイヤーがサーバーを抜けた時に即座に実行
-Players.PlayerRemoving:Connect(removeESP)
-
-local function updateSubFeatures()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local char = p.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChild("Humanoid")
-            
-            -- チーム判定
-            local isTeamMatch = true
-            if espCfg.TargetTeam ~= "全てのチーム" then
-                if not p.Team or p.Team.Name ~= espCfg.TargetTeam then
-                    isTeamMatch = false
-                end
-            end
-
-            local shouldShow = false
-            local isTarget = (not espCfg.TargetOnly) or (espCfg.TargetOnly and p == targetSub)
-            
-            -- 設定が有効、かつターゲット一致、かつチーム一致、かつ生存している場合
-            if espCfg.Enabled and isTarget and isTeamMatch and root and hum and hum.Health > 0 then
-                shouldShow = true
-            end
-
-            local esp = espCache[p] or {}
-            
-            if shouldShow then
-                local vector, onScreen = Camera:WorldToViewportPoint(root.Position)
-                local dist = (Camera.CFrame.Position - root.Position).Magnitude
-
-                -- カラー決定
-                local color = espCfg.ESPColor
-                if espCfg.UseTeamColor and p.TeamColor then
-                    color = p.TeamColor.Color
-                end
-
-                -- 1. Box (Highlightの代わり)
-                if espCfg.Highlight then 
-                    if not esp.Box then
-                        esp.Box = Drawing.new("Square")
-                        esp.Box.Thickness = 1
-                        esp.Box.Filled = false
-                        esp.Box.Transparency = 1
-                    end
-                    esp.Box.Visible = onScreen
-                    if onScreen then
-                        local size = 2500 / dist
-                        esp.Box.Size = Vector2.new(size, size * 1.5)
-                        esp.Box.Position = Vector2.new(vector.X - size / 2, vector.Y - size * 0.75)
-                        esp.Box.Color = color
-                    end
-                elseif esp.Box then
-                    esp.Box.Visible = false
-                end
-
-                -- 2. 名前表示
-                if espCfg.Names then
-                    if not esp.Name then
-                        esp.Name = Drawing.new("Text")
-                        esp.Name.Size = 14
-                        esp.Name.Center = true
-                        esp.Name.Outline = true
-                        esp.Name.Transparency = 1
-                    end
-                    esp.Name.Visible = onScreen
-                    if onScreen then
-                        esp.Name.Position = Vector2.new(vector.X, vector.Y - (2500 / dist) * 0.75 - 15)
-                        esp.Name.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-                        esp.Name.Color = color
-                    end
-                elseif esp.Name then
-                    esp.Name.Visible = false
-                end
-
-                -- 3. トレーサー (改善版)
-                if espCfg.Tracers then
-                    if not esp.Tracer then
-                        esp.Tracer = Drawing.new("Line")
-                        esp.Tracer.Thickness = 1
-                        esp.Tracer.Transparency = 1
-                    end
-                    
-                    esp.Tracer.Visible = onScreen
-                    if onScreen then
-                        esp.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                        esp.Tracer.To = Vector2.new(vector.X, vector.Y)
-                        esp.Tracer.Color = color
-                    end
-                elseif esp.Tracer then
-                    esp.Tracer.Visible = false
-                end
-                
-                espCache[p] = esp
-            else
-                -- 表示不要（退出・死亡・設定OFF）になったら即座にクリーンアップ
-                removeESP(p)
-            end
-        end
-    end
-end
-
 -- オートエイムループ
 RunService.RenderStepped:Connect(function()
     -- FOV円の更新
     fovCircle.Position = UserInputService:GetMouseLocation()
     fovCircle.Radius = aimCfg.FOV
-    fovCircle.Visible = aimCfg.Enabled and aimCfg.ShowFOV
+    fovCircle.Visible = aimCfg.ShowFOV
 
     if aimCfg.Enabled then
         local closest = nil
@@ -600,9 +471,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-local espConn = RunService.Heartbeat:Connect(updateSubFeatures)
-table.insert(getgenv().HolonConnections, espConn)
-
 --------------------------------------------------------------------------------
 -- [UI 構築] orion lib
 --------------------------------------------------------------------------------
@@ -621,12 +489,12 @@ local function StartHolonHUB()
     end)
 
     local Window = OrionLib:MakeWindow({
-        Name = "Holon HUB v1.3.7",
+        Name = "Holon HUB v1.3.8",
         HidePremium = false,
         SaveConfig = false, -- 初期化時の干渉を防ぐため無効化
         ConfigFolder = "HolonHUB",
         IntroEnabled = true,
-        IntroText = "Holon HUB v1.3.7 Loaded!"
+        IntroText = "Holon HUB v1.3.8 Loaded!"
     })
 
 -- プレイヤーリスト取得関数
@@ -681,81 +549,13 @@ AimSec:AddDropdown({
     Callback = function(v) aimCfg.TargetPart = v end
 })
 
--- --- TAB: ESP ---
-local EspTab = Window:MakeTab({
-    Name = "ESP",
-    Icon = "rbxassetid://7733771472"
-})
-
--- ESP設定セクション
-local EspSec = EspTab:AddSection({
-    Name = "ESP設定"
-})
-
-UIElements.EspEnabled = EspSec:AddToggle({
-    Name = "ESP有効",
-    Default = false,
-    Callback = function(v) espCfg.Enabled = v end 
-})
-
-UIElements.EspTargetOnly = EspSec:AddToggle({
-    Name = "ターゲットのみ表示",
-    Default = false,
-    Callback = function(v) espCfg.TargetOnly = v end 
-})
-
-UIElements.EspTargetTeam = EspSec:AddDropdown({
-    Name = "対象チーム選択",
-    Default = "全てのチーム",
-    Options = getTeamList(),
-    Callback = function(v) espCfg.TargetTeam = v end
-})
-
-UIElements.EspNames = EspSec:AddToggle({
-    Name = "名前表示",
-    Default = true,
-    Callback = function(v) espCfg.Names = v end 
-})
-
-UIElements.EspIcons = EspSec:AddToggle({
-    Name = "アイコン表示",
-    Default = true,
-    Callback = function(v) espCfg.Icons = v end 
-})
-
-UIElements.EspHighlight = EspSec:AddToggle({
-    Name = "体を発光 (Highlight)",
-    Default = false,
-    Callback = function(v) espCfg.Highlight = v end 
-})
-
-UIElements.EspTracers = EspSec:AddToggle({
-    Name = "トレーサー表示",
-    Default = false,
-    Callback = function(v) espCfg.Tracers = v end 
-})
-
-UIElements.EspUseTeamColor = EspSec:AddToggle({
-    Name = "チームカラーを使用",
-    Default = false,
-    Callback = function(v) espCfg.UseTeamColor = v end
-})
-
-UIElements.EspColor = EspSec:AddColorpicker({
-    Name = "ESPカラー",
-    Default = Color3.new(1,0,0),
-    Callback = function(v)
-        espCfg.ESPColor = v
-    end	  
-})
-
 local DetailTab = Window:MakeTab({Name = "詳細", Icon = DetailIcon})
 AddDetailContent(DetailTab)
 
 -- 通知（起動時）
 OrionLib:MakeNotification({
 	Name = "Holon HUB",
-	Content = "v1.3.5 が読み込まれました！",
+	Content = "v1.3.8 が読み込まれました！",
 	Time = 5
 })
 
