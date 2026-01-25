@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local Teams = game:GetService("Teams")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -20,6 +21,15 @@ if getgenv().HolonConnections then
     end
 end
 getgenv().HolonConnections = {}
+pcall(function() RunService:UnbindFromRenderStep("HolonAimbot") end)
+-- GUIクリーンアップ
+local function cleanupGui(name)
+    if game:GetService("CoreGui"):FindFirstChild(name) then game:GetService("CoreGui")[name]:Destroy() end
+    if gethui and gethui():FindFirstChild(name) then gethui()[name]:Destroy() end
+    if LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name) then LocalPlayer.PlayerGui[name]:Destroy() end
+end
+cleanupGui("HolonFOV")
+cleanupGui("HolonMiniUI")
 
 -- リンク集を表示する共通関数（認証画面とメイン画面で使い回せます）
 local function AddDetailContent(Tab)
@@ -27,201 +37,379 @@ local function AddDetailContent(Tab)
     Tab:AddLabel("Roblox ID: " .. RobloxID)
 end
 
-local espCache = {}
-local espCfg = { 
-    Enabled = false, 
-    Names = true, 
-    Icons = true, 
-    Tracers = false, 
-    Highlight = false, 
-    ESPColor = Color3.new(1, 0, 0), 
-    TargetOnly = false,
-    TargetTeam = "全てのチーム",
-    UseTeamColor = false
-}
 local aimCfg = { 
     Enabled = false, 
     FOV = 150, 
     ShowFOV = true, 
     ThroughWalls = false,
-    TargetPart = "HumanoidRootPart" 
+    TargetPart = "HumanoidRootPart",
+    TargetTeam = "敵チーム"
 }
 
+local currentLockedTarget = nil
+
+local bodyPartMap = {
+    ["頭"] = "Head",
+    ["胴体"] = "HumanoidRootPart",
+    ["上半身"] = "UpperTorso",
+    ["下半身"] = "LowerTorso"
+}
+local bodyPartMapReverse = {
+    ["Head"] = "頭",
+    ["HumanoidRootPart"] = "胴体",
+    ["UpperTorso"] = "上半身",
+    ["LowerTorso"] = "下半身"
+}
+
+-- UI要素を管理するテーブル (グローバルスコープに移動して連携可能にする)
+local UIElements = {}
+
 -- Auto Aim FOV Circle
-local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 1
-fovCircle.NumSides = 60
-fovCircle.Radius = 150
-fovCircle.Filled = false
-fovCircle.Visible = false
-fovCircle.Color = Color3.new(1, 1, 1)
-fovCircle.Transparency = 1
+local fovCircleGui = Instance.new("ScreenGui")
+fovCircleGui.Name = "HolonFOV"
+-- gethuiがあればそれを使用、なければCoreGui、それもなければPlayerGui
+fovCircleGui.IgnoreGuiInset = true -- ズレ修正
+local parent = (gethui and gethui()) or game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
+fovCircleGui.Parent = parent
+fovCircleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
---------------------------------------------------------------------------------
--- [ESP & サブ機能] 更新ループ (Prometheus対応版)
---------------------------------------------------------------------------------
--- 共通のクリーンアップ関数（退出時や非表示時に使用）
-local function removeESP(p)
-    local esp = espCache[p]
-    if esp then
-        if esp.Name then esp.Name:Remove() end
-        if esp.Box then esp.Box:Remove() end
-        if esp.Tracer then esp.Tracer:Remove() end
-        espCache[p] = nil
+local fovCircleFrame = Instance.new("Frame")
+fovCircleFrame.Name = "Circle"
+fovCircleFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircleFrame.BackgroundColor3 = Color3.new(1, 1, 1)
+fovCircleFrame.BackgroundTransparency = 1
+fovCircleFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovCircleFrame.Size = UDim2.new(0, 300, 0, 300)
+fovCircleFrame.Parent = fovCircleGui
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent = fovCircleFrame
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = Color3.new(1, 1, 1)
+fovStroke.Thickness = 1
+fovStroke.Parent = fovCircleFrame
+
+-- ミニUIの作成
+local miniUiGui = Instance.new("ScreenGui")
+miniUiGui.Name = "HolonMiniUI"
+miniUiGui.Parent = parent
+miniUiGui.Enabled = false
+miniUiGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local miniFrame = Instance.new("Frame")
+miniFrame.Size = UDim2.new(0, 120, 0, 190) -- スリム化
+miniFrame.Position = UDim2.new(1, -10, 0.5, 0) -- デフォルト右
+miniFrame.AnchorPoint = Vector2.new(1, 0.5)
+miniFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+miniFrame.BorderSizePixel = 0
+miniFrame.Parent = miniUiGui
+
+local miniCorner = Instance.new("UICorner")
+miniCorner.CornerRadius = UDim.new(0, 8)
+miniCorner.Parent = miniFrame
+
+local miniStroke = Instance.new("UIStroke")
+miniStroke.Color = Color3.fromRGB(100, 100, 100)
+miniStroke.Thickness = 1
+miniStroke.Parent = miniFrame
+
+local miniLayout = Instance.new("UIListLayout")
+miniLayout.Parent = miniFrame
+miniLayout.SortOrder = Enum.SortOrder.LayoutOrder
+miniLayout.Padding = UDim.new(0, 5)
+miniLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local miniPadding = Instance.new("UIPadding")
+miniPadding.Parent = miniFrame
+miniPadding.PaddingTop = UDim.new(0, 5)
+miniPadding.PaddingBottom = UDim.new(0, 5)
+miniPadding.PaddingLeft = UDim.new(0, 5)
+miniPadding.PaddingRight = UDim.new(0, 5)
+
+-- 1. Aim Toggle Button
+local miniAimBtn = Instance.new("TextButton")
+miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+miniAimBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+miniAimBtn.Text = "Aim: OFF"
+miniAimBtn.TextColor3 = Color3.new(1,1,1)
+miniAimBtn.Font = Enum.Font.SourceSansBold
+miniAimBtn.TextSize = 12
+miniAimBtn.Parent = miniFrame
+Instance.new("UICorner", miniAimBtn).CornerRadius = UDim.new(0, 6)
+
+-- 2. Team Cycle Button
+local miniTeamBtn = Instance.new("TextButton")
+miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+miniTeamBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+miniTeamBtn.Text = "Team: 敵チーム"
+miniTeamBtn.TextColor3 = Color3.new(1,1,1)
+miniTeamBtn.Font = Enum.Font.SourceSans
+miniTeamBtn.TextSize = 12
+miniTeamBtn.Parent = miniFrame
+Instance.new("UICorner", miniTeamBtn).CornerRadius = UDim.new(0, 6)
+
+-- 3. Part Cycle Button (New)
+local miniPartBtn = Instance.new("TextButton")
+miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+miniPartBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+miniPartBtn.Text = "Part: 胴体"
+miniPartBtn.TextColor3 = Color3.new(1,1,1)
+miniPartBtn.Font = Enum.Font.SourceSans
+miniPartBtn.TextSize = 12
+miniPartBtn.Parent = miniFrame
+Instance.new("UICorner", miniPartBtn).CornerRadius = UDim.new(0, 6)
+
+-- 4. FOV Slider Frame
+local miniSliderFrame = Instance.new("Frame")
+miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+miniSliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+miniSliderFrame.Parent = miniFrame
+Instance.new("UICorner", miniSliderFrame).CornerRadius = UDim.new(0, 6)
+
+local miniSliderFill = Instance.new("Frame")
+miniSliderFill.Size = UDim2.new(aimCfg.FOV/800, 0, 1, 0) -- 初期値
+miniSliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+miniSliderFill.Parent = miniSliderFrame
+Instance.new("UICorner", miniSliderFill).CornerRadius = UDim.new(0, 6)
+
+local miniSliderText = Instance.new("TextLabel")
+miniSliderText.Size = UDim2.new(1, 0, 1, 0)
+miniSliderText.BackgroundTransparency = 1
+miniSliderText.Text = "FOV: " .. math.floor(aimCfg.FOV)
+miniSliderText.TextColor3 = Color3.new(1,1,1)
+miniSliderText.Font = Enum.Font.SourceSansBold
+miniSliderText.TextSize = 12
+miniSliderText.Parent = miniSliderFrame
+
+-- 5. Unlock Target Button
+local miniUnlockBtn = Instance.new("TextButton")
+miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
+miniUnlockBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+miniUnlockBtn.Text = "Unlock"
+miniUnlockBtn.TextColor3 = Color3.new(1,1,1)
+miniUnlockBtn.Font = Enum.Font.SourceSansBold
+miniUnlockBtn.TextSize = 12
+miniUnlockBtn.Parent = miniFrame
+Instance.new("UICorner", miniUnlockBtn).CornerRadius = UDim.new(0, 6)
+
+-- ミニUIのロジック
+local function updateMiniUI()
+    miniAimBtn.Text = "Aim: " .. (aimCfg.Enabled and "ON" or "OFF")
+    miniAimBtn.BackgroundColor3 = aimCfg.Enabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0)
+    miniTeamBtn.Text = "Team: " .. aimCfg.TargetTeam
+    miniPartBtn.Text = "Part: " .. (bodyPartMapReverse[aimCfg.TargetPart] or aimCfg.TargetPart)
+    miniSliderText.Text = "FOV: " .. math.floor(aimCfg.FOV)
+    miniSliderFill.Size = UDim2.new(aimCfg.FOV/800, 0, 1, 0)
+end
+
+miniAimBtn.MouseButton1Click:Connect(function()
+    aimCfg.Enabled = not aimCfg.Enabled
+    if UIElements.AimEnabled then UIElements.AimEnabled:Set(aimCfg.Enabled) end
+    updateMiniUI()
+end)
+
+miniTeamBtn.MouseButton1Click:Connect(function()
+    local teams = {"敵チーム", "全てのチーム"}
+    for _, t in ipairs(Teams:GetTeams()) do table.insert(teams, t.Name) end
+    local idx = table.find(teams, aimCfg.TargetTeam) or 0
+    aimCfg.TargetTeam = teams[(idx % #teams) + 1] or "敵チーム"
+    if UIElements.AimTargetTeam then UIElements.AimTargetTeam:Set(aimCfg.TargetTeam) end
+    updateMiniUI()
+end)
+
+miniPartBtn.MouseButton1Click:Connect(function()
+    local parts = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    local idx = table.find(parts, aimCfg.TargetPart) or 0
+    aimCfg.TargetPart = parts[(idx % #parts) + 1] or "HumanoidRootPart"
+    if UIElements.AimTargetPart then UIElements.AimTargetPart:Set(bodyPartMapReverse[aimCfg.TargetPart]) end
+    updateMiniUI()
+end)
+
+miniUnlockBtn.MouseButton1Click:Connect(function()
+    currentLockedTarget = nil
+end)
+
+local miniUiPos = "Right"
+local function updateMiniUiLayout()
+    if miniUiPos == "Right" then
+        miniFrame.AnchorPoint = Vector2.new(1, 0.5)
+        miniFrame.Position = UDim2.new(1, -10, 0.5, 0)
+        miniLayout.FillDirection = Enum.FillDirection.Vertical
+        miniFrame.Size = UDim2.new(0, 120, 0, 190)
+        
+        miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+        miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
+    else -- Top
+        miniFrame.AnchorPoint = Vector2.new(0.5, 0)
+        miniFrame.Position = UDim2.new(0.5, 0, 0, 10)
+        miniLayout.FillDirection = Enum.FillDirection.Horizontal
+        miniFrame.Size = UDim2.new(0, 600, 0, 40)
+        
+        miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+        miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
     end
 end
 
--- プレイヤーがサーバーを抜けた時に即座に実行
-Players.PlayerRemoving:Connect(removeESP)
-
-local function updateSubFeatures()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local char = p.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChild("Humanoid")
-            
-            -- チーム判定
-            local isTeamMatch = true
-            if espCfg.TargetTeam ~= "全てのチーム" then
-                if not p.Team or p.Team.Name ~= espCfg.TargetTeam then
-                    isTeamMatch = false
-                end
-            end
-
-            local shouldShow = false
-            local isTarget = (not espCfg.TargetOnly) or (espCfg.TargetOnly and p == targetSub)
-            
-            -- 設定が有効、かつターゲット一致、かつチーム一致、かつ生存している場合
-            if espCfg.Enabled and isTarget and isTeamMatch and root and hum and hum.Health > 0 then
-                shouldShow = true
-            end
-
-            local esp = espCache[p] or {}
-            
-            if shouldShow then
-                local vector, onScreen = Camera:WorldToViewportPoint(root.Position)
-                local dist = (Camera.CFrame.Position - root.Position).Magnitude
-
-                -- カラー決定
-                local color = espCfg.ESPColor
-                if espCfg.UseTeamColor and p.TeamColor then
-                    color = p.TeamColor.Color
-                end
-
-                -- 1. Box (Highlightの代わり)
-                if espCfg.Highlight then 
-                    if not esp.Box then
-                        esp.Box = Drawing.new("Square")
-                        esp.Box.Thickness = 1
-                        esp.Box.Filled = false
-                        esp.Box.Transparency = 1
-                    end
-                    esp.Box.Visible = onScreen
-                    if onScreen then
-                        local size = 2500 / dist
-                        esp.Box.Size = Vector2.new(size, size * 1.5)
-                        esp.Box.Position = Vector2.new(vector.X - size / 2, vector.Y - size * 0.75)
-                        esp.Box.Color = color
-                    end
-                elseif esp.Box then
-                    esp.Box.Visible = false
-                end
-
-                -- 2. 名前表示
-                if espCfg.Names then
-                    if not esp.Name then
-                        esp.Name = Drawing.new("Text")
-                        esp.Name.Size = 14
-                        esp.Name.Center = true
-                        esp.Name.Outline = true
-                        esp.Name.Transparency = 1
-                    end
-                    esp.Name.Visible = onScreen
-                    if onScreen then
-                        esp.Name.Position = Vector2.new(vector.X, vector.Y - (2500 / dist) * 0.75 - 15)
-                        esp.Name.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-                        esp.Name.Color = color
-                    end
-                elseif esp.Name then
-                    esp.Name.Visible = false
-                end
-
-                -- 3. トレーサー (改善版)
-                if espCfg.Tracers then
-                    if not esp.Tracer then
-                        esp.Tracer = Drawing.new("Line")
-                        esp.Tracer.Thickness = 1
-                        esp.Tracer.Transparency = 1
-                    end
-                    
-                    esp.Tracer.Visible = onScreen
-                    if onScreen then
-                        esp.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                        esp.Tracer.To = Vector2.new(vector.X, vector.Y)
-                        esp.Tracer.Color = color
-                    end
-                elseif esp.Tracer then
-                    esp.Tracer.Visible = false
-                end
-                
-                espCache[p] = esp
-            else
-                -- 表示不要（退出・死亡・設定OFF）になったら即座にクリーンアップ
-                removeESP(p)
-            end
-        end
+local draggingSlider = false
+miniSliderFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = true
     end
-end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local mousePos = UserInputService:GetMouseLocation()
+        local relX = math.clamp(mousePos.X - miniSliderFrame.AbsolutePosition.X, 0, miniSliderFrame.AbsoluteSize.X)
+        local ratio = relX / miniSliderFrame.AbsoluteSize.X
+        local newFov = math.floor(ratio * 790 + 10)
+        aimCfg.FOV = newFov
+        if UIElements.AimFOV then UIElements.AimFOV:Set(newFov) end
+        updateMiniUI()
+    end
+end)
 
 -- オートエイムループ
-RunService.RenderStepped:Connect(function()
+RunService:BindToRenderStep("HolonAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     -- FOV円の更新
-    fovCircle.Position = UserInputService:GetMouseLocation()
-    fovCircle.Radius = aimCfg.FOV
-    fovCircle.Visible = aimCfg.Enabled and aimCfg.ShowFOV
+    fovCircleFrame.Size = UDim2.new(0, aimCfg.FOV * 2, 0, aimCfg.FOV * 2)
+    fovCircleGui.Enabled = aimCfg.Enabled and aimCfg.ShowFOV
+    
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    
+    -- 手動操作によるターゲット解除 (マウスの動きを検知)
+    local mouseDelta = UserInputService:GetMouseDelta()
+    if mouseDelta.Magnitude > 3 then -- 閾値
+        currentLockedTarget = nil
+    end
 
     if aimCfg.Enabled then
-        local closest = nil
-        local minDist = aimCfg.FOV
-        local mousePos = UserInputService:GetMouseLocation()
+        local target = nil
+        
+        -- ロック中のターゲットが有効かチェック
+        if currentLockedTarget and currentLockedTarget.Parent and currentLockedTarget.Parent:FindFirstChild("Humanoid") and currentLockedTarget.Parent.Humanoid.Health > 0 then
+             local p = Players:GetPlayerFromCharacter(currentLockedTarget.Parent)
+             if p then
+                 -- チーム判定
+                 local isTargetTeam = false
+                 if aimCfg.TargetTeam == "全てのチーム" then
+                     isTargetTeam = true
+                 elseif aimCfg.TargetTeam == "敵チーム" then
+                     isTargetTeam = true
+                     if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+                         isTargetTeam = false
+                     end
+                 elseif p.Team and p.Team.Name == aimCfg.TargetTeam then
+                     isTargetTeam = true
+                 end
+                 
+                 if isTargetTeam then
+                     -- FOVと壁抜きチェック
+                     local screenPos, onScreen = Camera:WorldToViewportPoint(currentLockedTarget.Position)
+                     local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                     
+                     if onScreen and dist <= aimCfg.FOV then
+                         local visible = true
+                         if not aimCfg.ThroughWalls then
+                             local params = RaycastParams.new()
+                             params.FilterDescendantsInstances = {LocalPlayer.Character, workspace.CurrentCamera} -- ターゲット自体は除外しない（ヒットしたら見えている証拠）
+                             params.FilterType = Enum.RaycastFilterType.Exclude
+                             local dir = (currentLockedTarget.Position - Camera.CFrame.Position)
+                             local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
+                             -- ヒットしたものがターゲットのキャラクターの一部でなければ「壁」とみなす
+                             if result and not result.Instance:IsDescendantOf(currentLockedTarget.Parent) then 
+                                 visible = false 
+                             end
+                         end
+                         
+                         if visible then
+                             target = currentLockedTarget
+                         else
+                             currentLockedTarget = nil
+                         end
+                     else
+                         currentLockedTarget = nil
+                     end
+                 else
+                     currentLockedTarget = nil
+                 end
+             else
+                 currentLockedTarget = nil
+             end
+        else
+            currentLockedTarget = nil
+        end
 
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                -- 敵判定 (自分のチームと違う場合、またはチームがない場合)
-                local isEnemy = true
-                if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-                    isEnemy = false
-                end
+        -- 新しいターゲットを探す
+        if not target then
+            local closest = nil
+            local minDist = aimCfg.FOV
+            
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    -- チーム判定
+                    local isTargetTeam = false
+                    if aimCfg.TargetTeam == "全てのチーム" then
+                        isTargetTeam = true
+                    elseif aimCfg.TargetTeam == "敵チーム" then
+                        isTargetTeam = true
+                        if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+                            isTargetTeam = false
+                        end
+                    elseif p.Team and p.Team.Name == aimCfg.TargetTeam then
+                        isTargetTeam = true
+                    end
 
-                if isEnemy and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-                    local targetPart = p.Character[aimCfg.TargetPart]
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                    
-                    if onScreen then
-                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                        if dist < minDist then
-                            -- 壁抜きチェック
-                            if not aimCfg.ThroughWalls then
-                                local params = RaycastParams.new()
-                                params.FilterDescendantsInstances = {LocalPlayer.Character, p.Character, workspace.CurrentCamera}
-                                params.FilterType = Enum.RaycastFilterType.Exclude
-                                local dir = (targetPart.Position - Camera.CFrame.Position)
-                                local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
-                                if result then continue end -- 壁がある
+                    if isTargetTeam and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+                        local targetPart = p.Character[aimCfg.TargetPart]
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                        
+                        if onScreen then
+                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                            if dist < minDist then
+                                -- 壁抜きチェック
+                                if not aimCfg.ThroughWalls then
+                                    local params = RaycastParams.new()
+                                    params.FilterDescendantsInstances = {LocalPlayer.Character, workspace.CurrentCamera}
+                                    params.FilterType = Enum.RaycastFilterType.Exclude
+                                    local dir = (targetPart.Position - Camera.CFrame.Position)
+                                    local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
+                                    if result and not result.Instance:IsDescendantOf(p.Character) then 
+                                        continue 
+                                    end
+                                end
+                                
+                                minDist = dist
+                                closest = targetPart
                             end
-                            
-                            minDist = dist
-                            closest = targetPart
                         end
                     end
                 end
             end
+            target = closest
+            if target then
+                currentLockedTarget = target
+            end
         end
         
-        if closest then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
+        if target then
+            -- CFrame.lookAtを使用してカメラの回転を安定させる
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, target.Position)
         end
+    else
+        currentLockedTarget = nil
     end
 end)
 
@@ -577,9 +765,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-local espConn = RunService.Heartbeat:Connect(updateSubFeatures)
-table.insert(getgenv().HolonConnections, espConn)
-
 --------------------------------------------------------------------------------
 -- [UI 構築] orion lib
 --------------------------------------------------------------------------------
@@ -598,12 +783,12 @@ local function StartHolonHUB()
     end)
 
     local Window = OrionLib:MakeWindow({
-        Name = "Holon HUB v1.3.7",
+        Name = "Holon HUB v1.4.1",
         HidePremium = false,
         SaveConfig = false, -- 初期化時の干渉を防ぐため無効化
         ConfigFolder = "HolonHUB",
         IntroEnabled = true,
-        IntroText = "Holon HUB v1.3.7 Loaded!"
+        IntroText = "Holon HUB v1.4.1 Loaded!"
     })
 
 -- プレイヤーリスト取得関数
@@ -616,9 +801,6 @@ local function getPList()
     return plist
 end
 
--- UI要素を管理するテーブル
-local UIElements = {}
-
 -- --- TAB: AUTO AIM ---
 local AimTab = Window:MakeTab({
     Name = "オートエイム",
@@ -630,25 +812,69 @@ local AimSec = AimTab:AddSection({ Name = "エイムボット設定" })
 UIElements.AimEnabled = AimSec:AddToggle({
     Name = "オートエイム有効化",
     Default = false,
-    Callback = function(v) aimCfg.Enabled = v end
+    Callback = function(v) 
+        aimCfg.Enabled = v 
+        updateMiniUI()
+    end
 })
 
 UIElements.AimShowFOV = AimSec:AddToggle({
     Name = "FOV円を表示",
     Default = true,
-    Callback = function(v) aimCfg.ShowFOV = v end
+    Callback = function(v) 
+        aimCfg.ShowFOV = v 
+        updateMiniUI()
+    end
 })
 
 UIElements.AimFOV = AimSec:AddSlider({
     Name = "FOVサイズ (円の大きさ)",
     Min = 10, Max = 800, Default = 150,
-    Callback = function(v) aimCfg.FOV = v end
+    Callback = function(v) 
+        aimCfg.FOV = v 
+        updateMiniUI()
+    end
 })
 
 UIElements.AimThroughWalls = AimSec:AddToggle({
     Name = "壁抜き (壁を無視)",
     Default = false,
     Callback = function(v) aimCfg.ThroughWalls = v end
+})
+
+AimSec:AddToggle({
+    Name = "ミニUIを表示",
+    Default = false,
+    Callback = function(v) miniUiGui.Enabled = v end
+})
+
+AimSec:AddDropdown({
+    Name = "ミニUI位置",
+    Default = "右",
+    Options = {"右", "上"},
+    Callback = function(v)
+        miniUiPos = (v == "右") and "Right" or "Top"
+        updateMiniUiLayout()
+    end
+})
+
+UIElements.AimTargetTeam = AimSec:AddDropdown({
+    Name = "対象チーム",
+    Default = "敵チーム",
+    Options = (function() 
+        local list = {"敵チーム", "全てのチーム"}
+        for _, t in ipairs(Teams:GetTeams()) do table.insert(list, t.Name) end
+        return list
+    end)(),
+    Callback = function(v) 
+        aimCfg.TargetTeam = v 
+        updateMiniUI()
+    end
+})
+
+AimSec:AddButton({
+    Name = "現在のターゲットを解除",
+    Callback = function() currentLockedTarget = nil end
 })
 
 UIElements.AimTargetPart = AimSec:AddDropdown({
@@ -661,81 +887,13 @@ UIElements.AimTargetPart = AimSec:AddDropdown({
     end
 })
 
--- --- TAB: ESP ---
-local EspTab = Window:MakeTab({
-    Name = "ESP",
-    Icon = "rbxassetid://7733771472"
-})
-
--- ESP設定セクション
-local EspSec = EspTab:AddSection({
-    Name = "ESP設定"
-})
-
-UIElements.EspEnabled = EspSec:AddToggle({
-    Name = "ESP有効",
-    Default = false,
-    Callback = function(v) espCfg.Enabled = v end 
-})
-
-UIElements.EspTargetOnly = EspSec:AddToggle({
-    Name = "ターゲットのみ表示",
-    Default = false,
-    Callback = function(v) espCfg.TargetOnly = v end 
-})
-
-UIElements.EspTargetTeam = EspSec:AddDropdown({
-    Name = "対象チーム選択",
-    Default = "全てのチーム",
-    Options = getTeamList(),
-    Callback = function(v) espCfg.TargetTeam = v end
-})
-
-UIElements.EspNames = EspSec:AddToggle({
-    Name = "名前表示",
-    Default = true,
-    Callback = function(v) espCfg.Names = v end 
-})
-
-UIElements.EspIcons = EspSec:AddToggle({
-    Name = "アイコン表示",
-    Default = true,
-    Callback = function(v) espCfg.Icons = v end 
-})
-
-UIElements.EspHighlight = EspSec:AddToggle({
-    Name = "体を発光 (Highlight)",
-    Default = false,
-    Callback = function(v) espCfg.Highlight = v end 
-})
-
-UIElements.EspTracers = EspSec:AddToggle({
-    Name = "トレーサー表示",
-    Default = false,
-    Callback = function(v) espCfg.Tracers = v end 
-})
-
-UIElements.EspUseTeamColor = EspSec:AddToggle({
-    Name = "チームカラーを使用",
-    Default = false,
-    Callback = function(v) espCfg.UseTeamColor = v end
-})
-
-UIElements.EspColor = EspSec:AddColorpicker({
-    Name = "ESPカラー",
-    Default = Color3.new(1,0,0),
-    Callback = function(v)
-        espCfg.ESPColor = v
-    end	  
-})
-
 local DetailTab = Window:MakeTab({Name = "詳細", Icon = DetailIcon})
 AddDetailContent(DetailTab)
 
 -- 通知（起動時）
 OrionLib:MakeNotification({
 	Name = "Holon HUB",
-	Content = "v1.3.5 が読み込まれました！",
+	Content = "v1.3.9 が読み込まれました！",
 	Time = 5
 })
 
