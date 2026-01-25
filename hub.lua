@@ -13,6 +13,14 @@ local AuthorName = "holon_calm"
 local RobloxID = "najayou777"
 local DetailIcon = "rbxassetid://7733964719"
 
+-- 重複実行時の接続解除処理
+if getgenv().HolonConnections then
+    for _, c in pairs(getgenv().HolonConnections) do
+        if c then c:Disconnect() end
+    end
+end
+getgenv().HolonConnections = {}
+
 -- リンク集を表示する共通関数（認証画面とメイン画面で使い回せます）
 local function AddDetailContent(Tab)
     Tab:AddButton({
@@ -71,11 +79,6 @@ fovCircle.Filled = false
 fovCircle.Visible = false
 fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
-
--- 以前のバージョンの残留物を削除
-if game:GetService("CoreGui"):FindFirstChild("HolonESP_Holder") then
-    game:GetService("CoreGui").HolonESP_Holder:Destroy()
-end
 
 --------------------------------------------------------------------------------
 -- [ESP & サブ機能] 更新ループ (Prometheus対応版)
@@ -597,7 +600,8 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-RunService.Heartbeat:Connect(updateSubFeatures)
+local espConn = RunService.Heartbeat:Connect(updateSubFeatures)
+table.insert(getgenv().HolonConnections, espConn)
 
 --------------------------------------------------------------------------------
 -- [UI 構築] orion lib
@@ -617,12 +621,12 @@ local function StartHolonHUB()
     end)
 
     local Window = OrionLib:MakeWindow({
-        Name = "Holon HUB v1.3.5",
+        Name = "Holon HUB v1.3.7",
         HidePremium = false,
         SaveConfig = false, -- 初期化時の干渉を防ぐため無効化
         ConfigFolder = "HolonHUB",
         IntroEnabled = true,
-        IntroText = "Holon HUB Load!"
+        IntroText = "Holon HUB v1.3.7 Loaded!"
     })
 
 -- プレイヤーリスト取得関数
