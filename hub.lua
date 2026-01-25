@@ -100,7 +100,7 @@ miniUiGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local miniFrame = Instance.new("Frame")
 miniFrame.Size = UDim2.new(0, 120, 0, 190) -- スリム化
-miniFrame.Position = UDim2.new(1, -10, 0.5, 0) -- デフォルト右
+miniFrame.Position = UDim2.new(1, -10, 0.4, 0) -- デフォルト右
 miniFrame.AnchorPoint = Vector2.new(1, 0.5)
 miniFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 miniFrame.BorderSizePixel = 0
@@ -235,7 +235,7 @@ local miniUiPos = "Right"
 local function updateMiniUiLayout()
     if miniUiPos == "Right" then
         miniFrame.AnchorPoint = Vector2.new(1, 0.5)
-        miniFrame.Position = UDim2.new(1, -10, 0.5, 0)
+        miniFrame.Position = UDim2.new(1, -10, 0.4, 0)
         miniLayout.FillDirection = Enum.FillDirection.Vertical
         miniFrame.Size = UDim2.new(0, 120, 0, 190)
         
@@ -783,12 +783,12 @@ local function StartHolonHUB()
     end)
 
     local Window = OrionLib:MakeWindow({
-        Name = "Holon HUB v1.4.1",
+        Name = "Holon HUB v1.4.2",
         HidePremium = false,
         SaveConfig = false, -- 初期化時の干渉を防ぐため無効化
         ConfigFolder = "HolonHUB",
         IntroEnabled = true,
-        IntroText = "Holon HUB v1.4.1 Loaded!"
+        IntroText = "Holon HUB v1.4.2 Loaded!"
     })
 
 -- プレイヤーリスト取得関数
@@ -893,7 +893,7 @@ AddDetailContent(DetailTab)
 -- 通知（起動時）
 OrionLib:MakeNotification({
 	Name = "Holon HUB",
-	Content = "v1.3.9 が読み込まれました！",
+	Content = "v1.4.2 が読み込まれました！",
 	Time = 5
 })
 
