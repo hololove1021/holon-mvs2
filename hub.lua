@@ -53,7 +53,13 @@ local espCfg = {
     TargetTeam = "全てのチーム",
     UseTeamColor = false
 }
-local aimCfg = { Enabled = false, FOV = 150, ShowFOV = true, ThroughWalls = false }
+local aimCfg = { 
+    Enabled = false, 
+    FOV = 150, 
+    ShowFOV = true, 
+    ThroughWalls = false,
+    TargetPart = "HumanoidRootPart" 
+}
 
 -- Auto Aim FOV Circle
 local fovCircle = Drawing.new("Circle")
@@ -64,14 +70,6 @@ fovCircle.Filled = false
 fovCircle.Visible = false
 fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
-
--- ESP用ホルダー (CoreGuiに作成して検知回避)
-if game:GetService("CoreGui"):FindFirstChild("HolonESP_Holder") then
-    game:GetService("CoreGui").HolonESP_Holder:Destroy()
-end
-local ESP_Holder = Instance.new("Folder")
-ESP_Holder.Name = "HolonESP_Holder"
-ESP_Holder.Parent = game:GetService("CoreGui")
 
 --------------------------------------------------------------------------------
 -- [ESP & サブ機能] 更新ループ (Prometheus対応版)
@@ -128,19 +126,19 @@ local function updateSubFeatures()
                 end
 
                 -- 1. ハイライト処理
-                if not esp.H then 
+                if not esp.H or esp.H.Parent ~= char then 
                     esp.H = Instance.new("Highlight")
-                    esp.H.Parent = ESP_Holder -- キャラクターではなくCoreGuiに入れる
+                    esp.H.Parent = char
                     esp.H.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 end
-                esp.H.Adornee = char -- 表示先をキャラクターに指定
+                esp.H.Enabled = true
                 esp.H.Enabled = espCfg.Highlight -- 個別トグル
                 esp.H.FillColor = color
 
                 -- 2. アイコン付き名前表示 (確実に動くURL形式)
-                if not esp.B then
+                if not esp.B or esp.B.Parent ~= root then
                     esp.B = Instance.new("BillboardGui")
-                    esp.B.Parent = ESP_Holder -- キャラクターではなくCoreGuiに入れる
+                    esp.B.Parent = root
                     esp.B.Size = UDim2.new(0, 250, 0, 50)
                     esp.B.AlwaysOnTop = true
                     esp.B.ExtentsOffset = Vector3.new(0, 3, 0)
@@ -170,7 +168,6 @@ local function updateSubFeatures()
                     esp.L = l
                     esp.I = icon
                 end
-                esp.B.Adornee = root -- 表示先をRootPartに指定
                 esp.B.Enabled = true
                 esp.I.Visible = espCfg.Icons
                 esp.L.Visible = espCfg.Names
@@ -199,26 +196,9 @@ local function updateSubFeatures()
                 elseif esp.T then
                     esp.T.Visible = false
                 end
-
-                -- 4. ヒットボックス
-                if espCfg.Hitbox then
-                    root.Size = Vector3.new(espCfg.HitboxSize, espCfg.HitboxSize, espCfg.HitboxSize)
-                    root.Transparency = 0.5
-                    root.Color = color
-                    root.CanCollide = false
-                else
-                    root.Size = Vector3.new(2, 2, 1)
-                    root.Transparency = 1
-                end
-                espCache[p] = esp
             else
                 -- 表示不要（退出・死亡・設定OFF）になったら即座にクリーンアップ
                 removeESP(p)
-                -- ヒットボックスのサイズも元に戻す
-                if root and root.Parent then
-                    root.Size = Vector3.new(2, 2, 1)
-                    root.Transparency = 1
-                end
             end
         end
     end
@@ -244,9 +224,9 @@ RunService.RenderStepped:Connect(function()
                     isEnemy = false
                 end
 
-                if isEnemy and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-                    local root = p.Character.HumanoidRootPart
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                if isEnemy and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+                    local targetPart = p.Character[aimCfg.TargetPart]
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                     
                     if onScreen then
                         local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
@@ -256,13 +236,13 @@ RunService.RenderStepped:Connect(function()
                                 local params = RaycastParams.new()
                                 params.FilterDescendantsInstances = {LocalPlayer.Character, p.Character, workspace.CurrentCamera}
                                 params.FilterType = Enum.RaycastFilterType.Exclude
-                                local dir = (root.Position - Camera.CFrame.Position)
+                                local dir = (targetPart.Position - Camera.CFrame.Position)
                                 local result = workspace:Raycast(Camera.CFrame.Position, dir.Unit * dir.Magnitude, params)
                                 if result then continue end -- 壁がある
                             end
                             
                             minDist = dist
-                            closest = root
+                            closest = targetPart
                         end
                     end
                 end
@@ -700,8 +680,21 @@ UIElements.AimThroughWalls = AimSec:AddToggle({
     Callback = function(v) aimCfg.ThroughWalls = v end
 })
 
+AimSec:AddDropdown({
+    Name = "狙う部位",
+    Default = "HumanoidRootPart",
+    Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
+    Callback = function(v) aimCfg.TargetPart = v end
+})
+
+-- --- TAB: ESP ---
+local EspTab = Window:MakeTab({
+    Name = "ESP",
+    Icon = "rbxassetid://7733771472"
+})
+
 -- ESP設定セクション
-local EspSec = SubTab:AddSection({
+local EspSec = EspTab:AddSection({
     Name = "ESP設定"
 })
 
@@ -746,20 +739,6 @@ UIElements.EspTracers = EspSec:AddToggle({
     Name = "トレーサー表示",
     Default = false,
     Callback = function(v) espCfg.Tracers = v end 
-})
-
-UIElements.EspHitbox = EspSec:AddToggle({
-    Name = "ヒットボックス",
-    Default = false,
-    Callback = function(v) espCfg.Hitbox = v end 
-})
-
-UIElements.EspHitboxSize = EspSec:AddSlider({
-    Name = "ヒットボックスサイズ",
-    Min = 2,
-    Max = 20,
-    Default = 10,
-    Callback = function(v) espCfg.HitboxSize = v end 
 })
 
 UIElements.EspUseTeamColor = EspSec:AddToggle({
