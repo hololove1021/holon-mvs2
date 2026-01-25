@@ -122,11 +122,11 @@ miniUiGui.Enabled = false
 miniUiGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local miniFrame = Instance.new("Frame")
-miniFrame.Size = UDim2.new(0, 160, 0, 180) -- 初期サイズ調整
+miniFrame.Size = UDim2.new(0, 120, 0, 190) -- スリム化
 miniFrame.Position = UDim2.new(0.85, 0, 0.3, 0)
 miniFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 miniFrame.BorderSizePixel = 0
-miniFrame.Active = true -- カスタムドラッグのためDraggableは削除
+miniFrame.Active = true
 miniFrame.Parent = miniUiGui
 
 local miniCorner = Instance.new("UICorner")
@@ -153,35 +153,46 @@ miniPadding.PaddingRight = UDim.new(0, 5)
 
 -- 1. Aim Toggle Button
 local miniAimBtn = Instance.new("TextButton")
-miniAimBtn.Size = UDim2.new(0, 140, 0, 30)
+miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
 miniAimBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
 miniAimBtn.Text = "Aim: OFF"
 miniAimBtn.TextColor3 = Color3.new(1,1,1)
 miniAimBtn.Font = Enum.Font.SourceSansBold
-miniAimBtn.TextSize = 14
+miniAimBtn.TextSize = 12
 miniAimBtn.Parent = miniFrame
 Instance.new("UICorner", miniAimBtn).CornerRadius = UDim.new(0, 6)
 
 -- 2. Team Cycle Button
 local miniTeamBtn = Instance.new("TextButton")
-miniTeamBtn.Size = UDim2.new(0, 140, 0, 30)
+miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
 miniTeamBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 miniTeamBtn.Text = "Team: 敵チーム"
 miniTeamBtn.TextColor3 = Color3.new(1,1,1)
 miniTeamBtn.Font = Enum.Font.SourceSans
-miniTeamBtn.TextSize = 14
+miniTeamBtn.TextSize = 12
 miniTeamBtn.Parent = miniFrame
 Instance.new("UICorner", miniTeamBtn).CornerRadius = UDim.new(0, 6)
 
--- 3. FOV Slider Frame
+-- 3. Part Cycle Button (New)
+local miniPartBtn = Instance.new("TextButton")
+miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+miniPartBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+miniPartBtn.Text = "Part: 胴体"
+miniPartBtn.TextColor3 = Color3.new(1,1,1)
+miniPartBtn.Font = Enum.Font.SourceSans
+miniPartBtn.TextSize = 12
+miniPartBtn.Parent = miniFrame
+Instance.new("UICorner", miniPartBtn).CornerRadius = UDim.new(0, 6)
+
+-- 4. FOV Slider Frame
 local miniSliderFrame = Instance.new("Frame")
-miniSliderFrame.Size = UDim2.new(0, 140, 0, 30)
+miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
 miniSliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 miniSliderFrame.Parent = miniFrame
 Instance.new("UICorner", miniSliderFrame).CornerRadius = UDim.new(0, 6)
 
 local miniSliderFill = Instance.new("Frame")
-miniSliderFill.Size = UDim2.new(aimCfg.FOV/800, 0, 1, 0)
+miniSliderFill.Size = UDim2.new(aimCfg.FOV/800, 0, 1, 0) -- 初期値
 miniSliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
 miniSliderFill.Parent = miniSliderFrame
 Instance.new("UICorner", miniSliderFill).CornerRadius = UDim.new(0, 6)
@@ -189,20 +200,20 @@ Instance.new("UICorner", miniSliderFill).CornerRadius = UDim.new(0, 6)
 local miniSliderText = Instance.new("TextLabel")
 miniSliderText.Size = UDim2.new(1, 0, 1, 0)
 miniSliderText.BackgroundTransparency = 1
-miniSliderText.Text = "FOV: " .. aimCfg.FOV
+miniSliderText.Text = "FOV: " .. math.floor(aimCfg.FOV)
 miniSliderText.TextColor3 = Color3.new(1,1,1)
 miniSliderText.Font = Enum.Font.SourceSansBold
-miniSliderText.TextSize = 14
+miniSliderText.TextSize = 12
 miniSliderText.Parent = miniSliderFrame
 
--- 4. Unlock Target Button
+-- 5. Unlock Target Button
 local miniUnlockBtn = Instance.new("TextButton")
-miniUnlockBtn.Size = UDim2.new(0, 140, 0, 30)
+miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
 miniUnlockBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
-miniUnlockBtn.Text = "Unlock Target"
+miniUnlockBtn.Text = "Unlock"
 miniUnlockBtn.TextColor3 = Color3.new(1,1,1)
 miniUnlockBtn.Font = Enum.Font.SourceSansBold
-miniUnlockBtn.TextSize = 14
+miniUnlockBtn.TextSize = 12
 miniUnlockBtn.Parent = miniFrame
 Instance.new("UICorner", miniUnlockBtn).CornerRadius = UDim.new(0, 6)
 
@@ -211,6 +222,7 @@ local function updateMiniUI()
     miniAimBtn.Text = "Aim: " .. (aimCfg.Enabled and "ON" or "OFF")
     miniAimBtn.BackgroundColor3 = aimCfg.Enabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0)
     miniTeamBtn.Text = "Team: " .. aimCfg.TargetTeam
+    miniPartBtn.Text = "Part: " .. (bodyPartMapReverse[aimCfg.TargetPart] or aimCfg.TargetPart)
     miniSliderText.Text = "FOV: " .. math.floor(aimCfg.FOV)
     miniSliderFill.Size = UDim2.new(aimCfg.FOV/800, 0, 1, 0)
 end
@@ -227,6 +239,14 @@ miniTeamBtn.MouseButton1Click:Connect(function()
     local idx = table.find(teams, aimCfg.TargetTeam) or 0
     aimCfg.TargetTeam = teams[(idx % #teams) + 1] or "敵チーム"
     if UIElements.AimTargetTeam then UIElements.AimTargetTeam:Set(aimCfg.TargetTeam) end
+    updateMiniUI()
+end)
+
+miniPartBtn.MouseButton1Click:Connect(function()
+    local parts = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"}
+    local idx = table.find(parts, aimCfg.TargetPart) or 0
+    aimCfg.TargetPart = parts[(idx % #parts) + 1] or "HumanoidRootPart"
+    if UIElements.AimTargetPart then UIElements.AimTargetPart:Set(bodyPartMapReverse[aimCfg.TargetPart]) end
     updateMiniUI()
 end)
 
@@ -265,14 +285,23 @@ miniFrame.InputBegan:Connect(function(input)
     if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not draggingSlider then
         draggingMini = true
         dragStart = input.Position
-        startPos = miniFrame.Position
+        startPos = miniFrame.AbsolutePosition -- 絶対座標で取得
     end
 end)
 
 miniFrame.InputChanged:Connect(function(input)
     if draggingMini and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        miniFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        local newX = startPos.X + delta.X
+        local newY = startPos.Y + delta.Y
+        
+        -- 画面外に行かないように制限 (Clamp)
+        local vp = Camera.ViewportSize
+        local size = miniFrame.AbsoluteSize
+        newX = math.clamp(newX, 0, vp.X - size.X)
+        newY = math.clamp(newY, 0, vp.Y - size.Y)
+        
+        miniFrame.Position = UDim2.new(0, newX, 0, newY)
     end
 end)
 
@@ -311,20 +340,22 @@ UserInputService.InputEnded:Connect(function(input)
         -- レイアウト変更 (端に合わせて長さを変える)
         if isVertical then
             miniLayout.FillDirection = Enum.FillDirection.Vertical
-            miniFrame.Size = UDim2.new(0, 160, 0, 180) -- 縦長
+            miniFrame.Size = UDim2.new(0, 120, 0, 190) -- 縦長
             -- ボタンサイズのリセット
-            miniAimBtn.Size = UDim2.new(0, 140, 0, 30)
-            miniTeamBtn.Size = UDim2.new(0, 140, 0, 30)
-            miniSliderFrame.Size = UDim2.new(0, 140, 0, 30)
-            miniUnlockBtn.Size = UDim2.new(0, 140, 0, 30)
+            miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+            miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+            miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+            miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+            miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
         else
             miniLayout.FillDirection = Enum.FillDirection.Horizontal
-            miniFrame.Size = UDim2.new(0, 600, 0, 50) -- 横長
+            miniFrame.Size = UDim2.new(0, 600, 0, 40) -- 横長
             -- ボタンサイズのリセット
-            miniAimBtn.Size = UDim2.new(0, 140, 0, 30)
-            miniTeamBtn.Size = UDim2.new(0, 140, 0, 30)
-            miniSliderFrame.Size = UDim2.new(0, 140, 0, 30)
-            miniUnlockBtn.Size = UDim2.new(0, 140, 0, 30)
+            miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+            miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+            miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+            miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+            miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
         end
         
         TweenService:Create(miniFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
