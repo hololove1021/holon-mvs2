@@ -71,6 +71,11 @@ fovCircle.Visible = false
 fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
 
+-- 以前のバージョンの残留物を削除
+if game:GetService("CoreGui"):FindFirstChild("HolonESP_Holder") then
+    game:GetService("CoreGui").HolonESP_Holder:Destroy()
+end
+
 --------------------------------------------------------------------------------
 -- [ESP & サブ機能] 更新ループ (Prometheus対応版)
 --------------------------------------------------------------------------------
