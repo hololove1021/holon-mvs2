@@ -71,14 +71,6 @@ fovCircle.Visible = false
 fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
 
--- ESP用ホルダー (CoreGuiに作成して検知回避)
-local ESP_Holder = game:GetService("CoreGui"):FindFirstChild("HolonESP_Holder")
-if not ESP_Holder then
-    ESP_Holder = Instance.new("Folder")
-    ESP_Holder.Name = "HolonESP_Holder"
-    ESP_Holder.Parent = game:GetService("CoreGui")
-end
-
 --------------------------------------------------------------------------------
 -- [ESP & サブ機能] 更新ループ (Prometheus対応版)
 --------------------------------------------------------------------------------
@@ -86,14 +78,9 @@ end
 local function removeESP(p)
     local esp = espCache[p]
     if esp then
-        if esp.H then pcall(function() esp.H:Destroy() end) end
-        if esp.B then pcall(function() esp.B:Destroy() end) end
-        if esp.T then 
-            pcall(function() 
-                esp.T.Visible = false 
-                esp.T:Remove() -- DrawingオブジェクトはRemove()で完全に消去
-            end) 
-        end
+        if esp.Name then esp.Name:Remove() end
+        if esp.Box then esp.Box:Remove() end
+        if esp.Tracer then esp.Tracer:Remove() end
         espCache[p] = nil
     end
 end
@@ -127,84 +114,72 @@ local function updateSubFeatures()
             local esp = espCache[p] or {}
             
             if shouldShow then
+                local vector, onScreen = Camera:WorldToViewportPoint(root.Position)
+                local dist = (Camera.CFrame.Position - root.Position).Magnitude
+
                 -- カラー決定
                 local color = espCfg.ESPColor
                 if espCfg.UseTeamColor and p.TeamColor then
                     color = p.TeamColor.Color
                 end
 
-                -- 1. ハイライト処理
-                if not esp.H then 
-                    esp.H = Instance.new("Highlight")
-                    esp.H.Parent = ESP_Holder -- キャラクターではなくCoreGuiに入れる
-                    esp.H.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                -- 1. Box (Highlightの代わり)
+                if espCfg.Highlight then 
+                    if not esp.Box then
+                        esp.Box = Drawing.new("Square")
+                        esp.Box.Thickness = 1
+                        esp.Box.Filled = false
+                        esp.Box.Transparency = 1
+                    end
+                    esp.Box.Visible = onScreen
+                    if onScreen then
+                        local size = 2500 / dist
+                        esp.Box.Size = Vector2.new(size, size * 1.5)
+                        esp.Box.Position = Vector2.new(vector.X - size / 2, vector.Y - size * 0.75)
+                        esp.Box.Color = color
+                    end
+                elseif esp.Box then
+                    esp.Box.Visible = false
                 end
-                esp.H.Adornee = char -- 表示先をキャラクターに指定
-                esp.H.Enabled = espCfg.Highlight -- 個別トグル
-                esp.H.FillColor = color
 
-                -- 2. アイコン付き名前表示 (確実に動くURL形式)
-                if not esp.B then
-                    esp.B = Instance.new("BillboardGui")
-                    esp.B.Parent = ESP_Holder -- キャラクターではなくCoreGuiに入れる
-                    esp.B.Size = UDim2.new(0, 250, 0, 50)
-                    esp.B.AlwaysOnTop = true
-                    esp.B.ExtentsOffset = Vector3.new(0, 3, 0)
-
-                    local frame = Instance.new("Frame", esp.B)
-                    frame.Size = UDim2.new(1, 0, 1, 0)
-                    frame.BackgroundTransparency = 1
-
-                    local icon = Instance.new("ImageLabel", frame)
-                    icon.Name = "Icon"
-                    icon.Size = UDim2.new(0, 30, 0, 30)
-                    icon.Position = UDim2.new(0, 0, 0.5, -15)
-                    icon.BackgroundTransparency = 1
-                    -- アイコンが表示されていた形式のURLを使用
-                    icon.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. p.UserId .. "&width=420&height=420&format=png"
-
-                    local l = Instance.new("TextLabel", frame)
-                    l.Name = "NameLabel"
-                    l.Size = UDim2.new(1, -35, 1, 0)
-                    l.Position = UDim2.new(0, 35, 0, 0)
-                    l.BackgroundTransparency = 1
-                    l.TextXAlignment = Enum.TextXAlignment.Left
-                    l.TextStrokeTransparency = 0
-                    l.Font = Enum.Font.SourceSansBold
-                    l.TextSize = 14
-                    
-                    esp.L = l
-                    esp.I = icon
+                -- 2. 名前表示
+                if espCfg.Names then
+                    if not esp.Name then
+                        esp.Name = Drawing.new("Text")
+                        esp.Name.Size = 14
+                        esp.Name.Center = true
+                        esp.Name.Outline = true
+                        esp.Name.Transparency = 1
+                    end
+                    esp.Name.Visible = onScreen
+                    if onScreen then
+                        esp.Name.Position = Vector2.new(vector.X, vector.Y - (2500 / dist) * 0.75 - 15)
+                        esp.Name.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+                        esp.Name.Color = color
+                    end
+                elseif esp.Name then
+                    esp.Name.Visible = false
                 end
-                esp.B.Adornee = root -- 表示先をRootPartに指定
-                esp.B.Enabled = true
-                esp.I.Visible = espCfg.Icons
-                esp.L.Visible = espCfg.Names
-                esp.L.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-                esp.L.TextColor3 = color
 
                 -- 3. トレーサー (改善版)
                 if espCfg.Tracers then
-                    if not esp.T then
-                        esp.T = Drawing.new("Line")
-                        esp.T.Thickness = 1
-                        esp.T.Transparency = 1
+                    if not esp.Tracer then
+                        esp.Tracer = Drawing.new("Line")
+                        esp.Tracer.Thickness = 1
+                        esp.Tracer.Transparency = 1
                     end
                     
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
-                    esp.T.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                    esp.T.Color = color
-                    
+                    esp.Tracer.Visible = onScreen
                     if onScreen then
-                        esp.T.To = Vector2.new(screenPos.X, screenPos.Y)
-                        esp.T.Visible = true
-                    else
-                        -- 画面外のトレーサー処理（不要な場合は visible = false に）
-                        esp.T.Visible = false 
+                        esp.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        esp.Tracer.To = Vector2.new(vector.X, vector.Y)
+                        esp.Tracer.Color = color
                     end
-                elseif esp.T then
-                    esp.T.Visible = false
+                elseif esp.Tracer then
+                    esp.Tracer.Visible = false
                 end
+                
+                espCache[p] = esp
             else
                 -- 表示不要（退出・死亡・設定OFF）になったら即座にクリーンアップ
                 removeESP(p)
