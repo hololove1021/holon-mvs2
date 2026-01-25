@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local Teams = game:GetService("Teams")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -83,6 +84,9 @@ local bodyPartMapReverse = {
     ["LowerTorso"] = "下半身"
 }
 
+-- UI要素を管理するテーブル (グローバルスコープに移動して連携可能にする)
+local UIElements = {}
+
 -- Auto Aim FOV Circle
 local fovCircleGui = Instance.new("ScreenGui")
 fovCircleGui.Name = "HolonFOV"
@@ -118,12 +122,11 @@ miniUiGui.Enabled = false
 miniUiGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local miniFrame = Instance.new("Frame")
-miniFrame.Size = UDim2.new(0, 160, 0, 140)
+miniFrame.Size = UDim2.new(0, 160, 0, 180) -- 初期サイズ調整
 miniFrame.Position = UDim2.new(0.85, 0, 0.3, 0)
 miniFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 miniFrame.BorderSizePixel = 0
-miniFrame.Active = true
-miniFrame.Draggable = true
+miniFrame.Active = true -- カスタムドラッグのためDraggableは削除
 miniFrame.Parent = miniUiGui
 
 local miniCorner = Instance.new("UICorner")
@@ -143,7 +146,10 @@ miniLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local miniPadding = Instance.new("UIPadding")
 miniPadding.Parent = miniFrame
-miniPadding.PaddingTop = UDim.new(0, 10)
+miniPadding.PaddingTop = UDim.new(0, 5)
+miniPadding.PaddingBottom = UDim.new(0, 5)
+miniPadding.PaddingLeft = UDim.new(0, 5)
+miniPadding.PaddingRight = UDim.new(0, 5)
 
 -- 1. Aim Toggle Button
 local miniAimBtn = Instance.new("TextButton")
@@ -189,6 +195,17 @@ miniSliderText.Font = Enum.Font.SourceSansBold
 miniSliderText.TextSize = 14
 miniSliderText.Parent = miniSliderFrame
 
+-- 4. Unlock Target Button
+local miniUnlockBtn = Instance.new("TextButton")
+miniUnlockBtn.Size = UDim2.new(0, 140, 0, 30)
+miniUnlockBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+miniUnlockBtn.Text = "Unlock Target"
+miniUnlockBtn.TextColor3 = Color3.new(1,1,1)
+miniUnlockBtn.Font = Enum.Font.SourceSansBold
+miniUnlockBtn.TextSize = 14
+miniUnlockBtn.Parent = miniFrame
+Instance.new("UICorner", miniUnlockBtn).CornerRadius = UDim.new(0, 6)
+
 -- ミニUIのロジック
 local function updateMiniUI()
     miniAimBtn.Text = "Aim: " .. (aimCfg.Enabled and "ON" or "OFF")
@@ -213,6 +230,10 @@ miniTeamBtn.MouseButton1Click:Connect(function()
     updateMiniUI()
 end)
 
+miniUnlockBtn.MouseButton1Click:Connect(function()
+    currentLockedTarget = nil
+end)
+
 local draggingSlider = false
 miniSliderFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -233,6 +254,80 @@ UserInputService.InputChanged:Connect(function(input)
         aimCfg.FOV = newFov
         if UIElements.AimFOV then UIElements.AimFOV:Set(newFov) end
         updateMiniUI()
+    end
+end)
+
+-- ミニUIのドラッグ＆スナップ処理
+local draggingMini = false
+local dragStart, startPos
+
+miniFrame.InputBegan:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not draggingSlider then
+        draggingMini = true
+        dragStart = input.Position
+        startPos = miniFrame.Position
+    end
+end)
+
+miniFrame.InputChanged:Connect(function(input)
+    if draggingMini and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        miniFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and draggingMini then
+        draggingMini = false
+        
+        -- スナップ処理
+        local vp = Camera.ViewportSize
+        local pos = miniFrame.AbsolutePosition
+        local size = miniFrame.AbsoluteSize
+        
+        local distLeft = pos.X
+        local distRight = vp.X - (pos.X + size.X)
+        local distTop = pos.Y
+        local distBottom = vp.Y - (pos.Y + size.Y)
+        
+        local minDist = math.min(distLeft, distRight, distTop, distBottom)
+        local targetPos = UDim2.new(0, pos.X, 0, pos.Y)
+        local isVertical = true
+        
+        if minDist == distLeft then
+            targetPos = UDim2.new(0, 10, 0, pos.Y)
+            isVertical = true
+        elseif minDist == distRight then
+            targetPos = UDim2.new(1, -size.X - 10, 0, pos.Y)
+            isVertical = true
+        elseif minDist == distTop then
+            targetPos = UDim2.new(0, pos.X, 0, 10)
+            isVertical = false
+        elseif minDist == distBottom then
+            targetPos = UDim2.new(0, pos.X, 1, -size.Y - 10)
+            isVertical = false
+        end
+        
+        -- レイアウト変更 (端に合わせて長さを変える)
+        if isVertical then
+            miniLayout.FillDirection = Enum.FillDirection.Vertical
+            miniFrame.Size = UDim2.new(0, 160, 0, 180) -- 縦長
+            -- ボタンサイズのリセット
+            miniAimBtn.Size = UDim2.new(0, 140, 0, 30)
+            miniTeamBtn.Size = UDim2.new(0, 140, 0, 30)
+            miniSliderFrame.Size = UDim2.new(0, 140, 0, 30)
+            miniUnlockBtn.Size = UDim2.new(0, 140, 0, 30)
+        else
+            miniLayout.FillDirection = Enum.FillDirection.Horizontal
+            miniFrame.Size = UDim2.new(0, 600, 0, 50) -- 横長
+            -- ボタンサイズのリセット
+            miniAimBtn.Size = UDim2.new(0, 140, 0, 30)
+            miniTeamBtn.Size = UDim2.new(0, 140, 0, 30)
+            miniSliderFrame.Size = UDim2.new(0, 140, 0, 30)
+            miniUnlockBtn.Size = UDim2.new(0, 140, 0, 30)
+        end
+        
+        TweenService:Create(miniFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
     end
 end)
 
@@ -738,12 +833,12 @@ local function StartHolonHUB()
     end)
 
     local Window = OrionLib:MakeWindow({
-        Name = "Holon HUB v1.3.8",
+        Name = "Holon HUB v1.3.9",
         HidePremium = false,
         SaveConfig = false, -- 初期化時の干渉を防ぐため無効化
         ConfigFolder = "HolonHUB",
         IntroEnabled = true,
-        IntroText = "Holon HUB v1.3.8 Loaded!"
+        IntroText = "Holon HUB v1.3.9 Loaded!"
     })
 
 -- プレイヤーリスト取得関数
@@ -756,9 +851,6 @@ local function getPList()
     return plist
 end
 
--- UI要素を管理するテーブル
-local UIElements = {}
-
 -- --- TAB: AUTO AIM ---
 local AimTab = Window:MakeTab({
     Name = "オートエイム",
@@ -770,19 +862,28 @@ local AimSec = AimTab:AddSection({ Name = "エイムボット設定" })
 UIElements.AimEnabled = AimSec:AddToggle({
     Name = "オートエイム有効化",
     Default = false,
-    Callback = function(v) aimCfg.Enabled = v end
+    Callback = function(v) 
+        aimCfg.Enabled = v 
+        updateMiniUI()
+    end
 })
 
 UIElements.AimShowFOV = AimSec:AddToggle({
     Name = "FOV円を表示",
     Default = true,
-    Callback = function(v) aimCfg.ShowFOV = v end
+    Callback = function(v) 
+        aimCfg.ShowFOV = v 
+        updateMiniUI()
+    end
 })
 
 UIElements.AimFOV = AimSec:AddSlider({
     Name = "FOVサイズ (円の大きさ)",
     Min = 10, Max = 800, Default = 150,
-    Callback = function(v) aimCfg.FOV = v end
+    Callback = function(v) 
+        aimCfg.FOV = v 
+        updateMiniUI()
+    end
 })
 
 UIElements.AimThroughWalls = AimSec:AddToggle({
@@ -797,7 +898,7 @@ AimSec:AddToggle({
     Callback = function(v) miniUiGui.Enabled = v end
 })
 
-AimSec:AddDropdown({
+UIElements.AimTargetTeam = AimSec:AddDropdown({
     Name = "対象チーム",
     Default = "敵チーム",
     Options = (function() 
@@ -805,7 +906,15 @@ AimSec:AddDropdown({
         for _, t in ipairs(Teams:GetTeams()) do table.insert(list, t.Name) end
         return list
     end)(),
-    Callback = function(v) aimCfg.TargetTeam = v end
+    Callback = function(v) 
+        aimCfg.TargetTeam = v 
+        updateMiniUI()
+    end
+})
+
+AimSec:AddButton({
+    Name = "現在のターゲットを解除",
+    Callback = function() currentLockedTarget = nil end
 })
 
 AimSec:AddDropdown({
@@ -821,7 +930,7 @@ AddDetailContent(DetailTab)
 -- 通知（起動時）
 OrionLib:MakeNotification({
 	Name = "Holon HUB",
-	Content = "v1.3.8 が読み込まれました！",
+	Content = "v1.3.9 が読み込まれました！",
 	Time = 5
 })
 
