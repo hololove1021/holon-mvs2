@@ -20,6 +20,7 @@ if getgenv().HolonConnections then
     end
 end
 getgenv().HolonConnections = {}
+pcall(function() RunService:UnbindFromRenderStep("HolonAimbot") end)
 
 -- リンク集を表示する共通関数（認証画面とメイン画面で使い回せます）
 local function AddDetailContent(Tab)
@@ -55,7 +56,8 @@ local aimCfg = {
     FOV = 150, 
     ShowFOV = true, 
     ThroughWalls = false,
-    TargetPart = "HumanoidRootPart" 
+    TargetPart = "HumanoidRootPart",
+    TargetTeam = "敵チーム"
 }
 
 -- Auto Aim FOV Circle
@@ -69,26 +71,34 @@ fovCircle.Color = Color3.new(1, 1, 1)
 fovCircle.Transparency = 1
 
 -- オートエイムループ
-RunService.RenderStepped:Connect(function()
+RunService:BindToRenderStep("HolonAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     -- FOV円の更新
-    fovCircle.Position = UserInputService:GetMouseLocation()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    fovCircle.Position = center
     fovCircle.Radius = aimCfg.FOV
     fovCircle.Visible = aimCfg.ShowFOV
 
     if aimCfg.Enabled then
         local closest = nil
         local minDist = aimCfg.FOV
-        local mousePos = UserInputService:GetMouseLocation()
+        local mousePos = center -- 画面中央を基準にする
 
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
-                -- 敵判定 (自分のチームと違う場合、またはチームがない場合)
-                local isEnemy = true
-                if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-                    isEnemy = false
+                -- チーム判定
+                local isTargetTeam = false
+                if aimCfg.TargetTeam == "全てのチーム" then
+                    isTargetTeam = true
+                elseif aimCfg.TargetTeam == "敵チーム" then
+                    isTargetTeam = true
+                    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+                        isTargetTeam = false
+                    end
+                elseif p.Team and p.Team.Name == aimCfg.TargetTeam then
+                    isTargetTeam = true
                 end
 
-                if isEnemy and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+                if isTargetTeam and p.Character and p.Character:FindFirstChild(aimCfg.TargetPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
                     local targetPart = p.Character[aimCfg.TargetPart]
                     local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                     
@@ -540,6 +550,17 @@ UIElements.AimThroughWalls = AimSec:AddToggle({
     Name = "壁抜き (壁を無視)",
     Default = false,
     Callback = function(v) aimCfg.ThroughWalls = v end
+})
+
+AimSec:AddDropdown({
+    Name = "対象チーム",
+    Default = "敵チーム",
+    Options = (function() 
+        local list = {"敵チーム", "全てのチーム"}
+        for _, t in ipairs(Teams:GetTeams()) do table.insert(list, t.Name) end
+        return list
+    end)(),
+    Callback = function(v) aimCfg.TargetTeam = v end
 })
 
 AimSec:AddDropdown({
