@@ -123,10 +123,10 @@ miniUiGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local miniFrame = Instance.new("Frame")
 miniFrame.Size = UDim2.new(0, 120, 0, 190) -- スリム化
-miniFrame.Position = UDim2.new(0.85, 0, 0.3, 0)
+miniFrame.Position = UDim2.new(1, -10, 0.5, 0) -- デフォルト右
+miniFrame.AnchorPoint = Vector2.new(1, 0.5)
 miniFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 miniFrame.BorderSizePixel = 0
-miniFrame.Active = true
 miniFrame.Parent = miniUiGui
 
 local miniCorner = Instance.new("UICorner")
@@ -254,6 +254,33 @@ miniUnlockBtn.MouseButton1Click:Connect(function()
     currentLockedTarget = nil
 end)
 
+local miniUiPos = "Right"
+local function updateMiniUiLayout()
+    if miniUiPos == "Right" then
+        miniFrame.AnchorPoint = Vector2.new(1, 0.5)
+        miniFrame.Position = UDim2.new(1, -10, 0.5, 0)
+        miniLayout.FillDirection = Enum.FillDirection.Vertical
+        miniFrame.Size = UDim2.new(0, 120, 0, 190)
+        
+        miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+        miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
+    else -- Top
+        miniFrame.AnchorPoint = Vector2.new(0.5, 0)
+        miniFrame.Position = UDim2.new(0.5, 0, 0, 10)
+        miniLayout.FillDirection = Enum.FillDirection.Horizontal
+        miniFrame.Size = UDim2.new(0, 600, 0, 40)
+        
+        miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
+        miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
+        miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
+    end
+end
+
 local draggingSlider = false
 miniSliderFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -274,91 +301,6 @@ UserInputService.InputChanged:Connect(function(input)
         aimCfg.FOV = newFov
         if UIElements.AimFOV then UIElements.AimFOV:Set(newFov) end
         updateMiniUI()
-    end
-end)
-
--- ミニUIのドラッグ＆スナップ処理
-local draggingMini = false
-local dragStart, startPos
-
-miniFrame.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not draggingSlider then
-        draggingMini = true
-        dragStart = input.Position
-        startPos = miniFrame.AbsolutePosition -- 絶対座標で取得
-    end
-end)
-
-miniFrame.InputChanged:Connect(function(input)
-    if draggingMini and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        local newX = startPos.X + delta.X
-        local newY = startPos.Y + delta.Y
-        
-        -- 画面外に行かないように制限 (Clamp)
-        local vp = Camera.ViewportSize
-        local size = miniFrame.AbsoluteSize
-        newX = math.clamp(newX, 0, vp.X - size.X)
-        newY = math.clamp(newY, 0, vp.Y - size.Y)
-        
-        miniFrame.Position = UDim2.new(0, newX, 0, newY)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and draggingMini then
-        draggingMini = false
-        
-        -- スナップ処理
-        local vp = Camera.ViewportSize
-        local pos = miniFrame.AbsolutePosition
-        local size = miniFrame.AbsoluteSize
-        
-        local distLeft = pos.X
-        local distRight = vp.X - (pos.X + size.X)
-        local distTop = pos.Y
-        local distBottom = vp.Y - (pos.Y + size.Y)
-        
-        local minDist = math.min(distLeft, distRight, distTop, distBottom)
-        local targetPos = UDim2.new(0, pos.X, 0, pos.Y)
-        local isVertical = true
-        
-        if minDist == distLeft then
-            targetPos = UDim2.new(0, 10, 0, pos.Y)
-            isVertical = true
-        elseif minDist == distRight then
-            targetPos = UDim2.new(1, -size.X - 10, 0, pos.Y)
-            isVertical = true
-        elseif minDist == distTop then
-            targetPos = UDim2.new(0, pos.X, 0, 10)
-            isVertical = false
-        elseif minDist == distBottom then
-            targetPos = UDim2.new(0, pos.X, 1, -size.Y - 10)
-            isVertical = false
-        end
-        
-        -- レイアウト変更 (端に合わせて長さを変える)
-        if isVertical then
-            miniLayout.FillDirection = Enum.FillDirection.Vertical
-            miniFrame.Size = UDim2.new(0, 120, 0, 190) -- 縦長
-            -- ボタンサイズのリセット
-            miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
-            miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
-            miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
-            miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
-            miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
-        else
-            miniLayout.FillDirection = Enum.FillDirection.Horizontal
-            miniFrame.Size = UDim2.new(0, 600, 0, 40) -- 横長
-            -- ボタンサイズのリセット
-            miniAimBtn.Size = UDim2.new(0, 110, 0, 25)
-            miniTeamBtn.Size = UDim2.new(0, 110, 0, 25)
-            miniPartBtn.Size = UDim2.new(0, 110, 0, 25)
-            miniSliderFrame.Size = UDim2.new(0, 110, 0, 25)
-            miniUnlockBtn.Size = UDim2.new(0, 110, 0, 25)
-        end
-        
-        TweenService:Create(miniFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
     end
 end)
 
@@ -864,12 +806,12 @@ local function StartHolonHUB()
     end)
 
     local Window = OrionLib:MakeWindow({
-        Name = "Holon HUB v1.3.9",
+        Name = "Holon HUB v1.4.0",
         HidePremium = false,
         SaveConfig = false, -- 初期化時の干渉を防ぐため無効化
         ConfigFolder = "HolonHUB",
         IntroEnabled = true,
-        IntroText = "Holon HUB v1.3.9 Loaded!"
+        IntroText = "Holon HUB v1.4.0 Loaded!"
     })
 
 -- プレイヤーリスト取得関数
@@ -927,6 +869,16 @@ AimSec:AddToggle({
     Name = "ミニUIを表示",
     Default = false,
     Callback = function(v) miniUiGui.Enabled = v end
+})
+
+AimSec:AddDropdown({
+    Name = "ミニUI位置",
+    Default = "右",
+    Options = {"右", "上"},
+    Callback = function(v)
+        miniUiPos = (v == "右") and "Right" or "Top"
+        updateMiniUiLayout()
+    end
 })
 
 UIElements.AimTargetTeam = AimSec:AddDropdown({
